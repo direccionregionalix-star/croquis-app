@@ -10,9 +10,13 @@
 <style>
 body {
   font-family: Arial;
-  margin: auto;
+  margin: 0;
   padding: 10px;
   max-width: 900px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
 }
 
 input {
@@ -26,7 +30,6 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
 }
 
 button {
@@ -37,20 +40,41 @@ button {
   background: #f5f5f5;
 }
 
+button.active {
+  background: #4CAF50;
+  color: white;
+}
+
 #pisos button {
   margin: 3px;
 }
 
+#numeros {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+#canvasContainer {
+  flex: 1;
+  min-height: 200px;
+}
+
 canvas {
+  width: 100%;
+  height: 100%;
   border: 1px solid #ccc;
-  display: block;
   touch-action: none;
 }
 
 #acciones {
-  margin-top: 10px;
   display: flex;
   gap: 10px;
+  padding: 10px 0;
+  background: white;
+  position: sticky;
+  bottom: 0;
 }
 
 #guardarBtn {
@@ -73,14 +97,15 @@ canvas {
 </div>
 
 <div id="toolbar">
-  <button onclick="setMode('select')" title="Seleccionar">🖱️</button>
-  <button onclick="setMode('draw')" title="Dibujo libre">🖊️</button>
-  <button onclick="setMode('line')" title="Línea">📏</button>
-  <button onclick="setMode('rect')" title="Rectángulo">⬛</button>
-  <button onclick="setMode('polygon')" title="Polígono">🔺</button>
+  <button data-mode="select" onclick="setMode('select')" title="Seleccionar">🖱️</button>
+  <button data-mode="draw" onclick="setMode('draw')" title="Dibujo libre">🖊️</button>
+  <button data-mode="line" onclick="setMode('line')" title="Línea">📏</button>
+  <button data-mode="rect" onclick="setMode('rect')" title="Rectángulo">⬛</button>
 
-  <button onclick="borrar()" title="Borrar objeto seleccionado">🧽</button>
-  <button onclick="limpiarCanvas()" title="Borrar todo el piso">🧹</button>
+  <button onclick="agregarPuerta()" title="Agregar puerta">🚪</button>
+
+  <button onclick="borrar()" title="Borrar seleccionado">🧽</button>
+  <button onclick="limpiarCanvas()" title="Borrar todo">🧹</button>
 
   <button onclick="undo()" title="Deshacer">↩️</button>
 
@@ -88,29 +113,40 @@ canvas {
   📏 <input type="number" id="width" value="2" min="1" max="10" style="width:60px;">
 </div>
 
-<canvas id="canvas"></canvas>
+<div id="numeros">
+  Números:
+  <button onclick="agregarNumero(1)">1</button>
+  <button onclick="agregarNumero(2)">2</button>
+  <button onclick="agregarNumero(3)">3</button>
+  <button onclick="agregarNumero(4)">4</button>
+  <button onclick="agregarNumero(5)">5</button>
+  <button onclick="agregarNumero(6)">6</button>
+  <button onclick="agregarNumero(7)">7</button>
+  <button onclick="agregarNumero(8)">8</button>
+  <button onclick="agregarNumero(9)">9</button>
+  <button onclick="agregarNumero(0)">0</button>
+</div>
+
+<div id="canvasContainer">
+  <canvas id="canvas"></canvas>
+</div>
 
 <div id="acciones">
-  <button onclick="descargarPDF()" title="Descargar PDF multipiso">📄</button>
-  <button id="guardarBtn" onclick="guardar()" title="Guardar en servidor">💾 Guardar</button>
+  <button onclick="descargarPDF()" title="Descargar PDF">📄</button>
+  <button id="guardarBtn" onclick="guardar()">💾 Guardar</button>
 </div>
 
 <script>
 const canvas = new fabric.Canvas('canvas');
 canvas.allowTouchScrolling = false;
 
-// =====================
-// Resize correcto
+// Resize dinámico
 function resizeCanvas() {
-  const width = document.body.clientWidth - 20;
-  const height = window.innerHeight * 0.6;
-
-  canvas.setWidth(width);
-  canvas.setHeight(height);
-
+  const container = document.getElementById("canvasContainer");
+  canvas.setWidth(container.clientWidth);
+  canvas.setHeight(container.clientHeight);
   canvas.renderAll();
 }
-
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
@@ -119,8 +155,6 @@ let mode = "select";
 let isDown = false;
 let startX, startY;
 let tempObj = null;
-let polygonPoints = [];
-let polygonLines = [];
 
 let pisos = {};
 let pisoActivo = null;
@@ -130,7 +164,10 @@ let history = [];
 function setMode(m) {
   mode = m;
   canvas.isDrawingMode = (m === 'draw');
-  if (m !== "polygon") resetPolygon();
+
+  document.querySelectorAll("#toolbar button").forEach(b => b.classList.remove("active"));
+  const btn = document.querySelector(`[data-mode='${m}']`);
+  if (btn) btn.classList.add("active");
 }
 
 // =====================
@@ -163,8 +200,6 @@ canvas.on("mouse:down", function(o) {
     });
     canvas.add(tempObj);
   }
-
-  if (mode === "polygon") addPolygonPoint(p);
 });
 
 canvas.on("mouse:move", function(o) {
@@ -190,55 +225,46 @@ canvas.on("mouse:up", function() {
 });
 
 // =====================
-// Polígonos
-canvas.on("mouse:dblclick", function() {
-  if (mode === "polygon" && polygonPoints.length > 2) {
-    const color = document.getElementById("color").value;
-    const width = parseInt(document.getElementById("width").value);
-
-    const poly = new fabric.Polygon(polygonPoints, {
-      fill: "transparent",
-      stroke: color,
-      strokeWidth: width
-    });
-
-    canvas.add(poly);
-
-    polygonLines.forEach(o => canvas.remove(o));
-    resetPolygon();
-    saveHistory();
-  }
-});
-
-function addPolygonPoint(p) {
-  polygonPoints.push({ x: p.x, y: p.y });
-
-  const dot = new fabric.Circle({
-    left: p.x,
-    top: p.y,
-    radius: 3,
-    fill: "red",
-    selectable: false
+function agregarNumero(n) {
+  const text = new fabric.Text(n.toString(), {
+    left: 100,
+    top: 100,
+    fontSize: 24,
+    fill: document.getElementById("color").value
   });
 
-  canvas.add(dot);
-  polygonLines.push(dot);
-
-  if (polygonPoints.length > 1) {
-    const prev = polygonPoints[polygonPoints.length - 2];
-    const line = new fabric.Line([prev.x, prev.y, p.x, p.y], {
-      stroke: "gray",
-      selectable: false
-    });
-    canvas.add(line);
-    polygonLines.push(line);
-  }
+  canvas.add(text);
+  canvas.setActiveObject(text);
+  saveHistory();
 }
 
-function resetPolygon() {
-  polygonPoints = [];
-  polygonLines.forEach(o => canvas.remove(o));
-  polygonLines = [];
+// =====================
+function agregarPuerta() {
+  const color = document.getElementById("color").value;
+
+  const linea = new fabric.Line([0, 0, 40, 0], {
+    stroke: color,
+    strokeWidth: 3
+  });
+
+  const arco = new fabric.Circle({
+    radius: 40,
+    startAngle: 0,
+    endAngle: Math.PI / 2,
+    stroke: color,
+    fill: '',
+    left: 0,
+    top: 0
+  });
+
+  const grupo = new fabric.Group([linea, arco], {
+    left: 100,
+    top: 100
+  });
+
+  canvas.add(grupo);
+  canvas.setActiveObject(grupo);
+  saveHistory();
 }
 
 // =====================
@@ -303,7 +329,6 @@ function cambiarPiso(nombre) {
 }
 
 // =====================
-// PDF multipiso
 async function descargarPDF() {
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF();
