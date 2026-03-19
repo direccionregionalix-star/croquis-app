@@ -8,8 +8,9 @@
 <style>
 body {
   font-family: Arial;
-  margin: 0;
+  margin: auto;
   padding: 10px;
+  max-width: 900px;
 }
 
 input {
@@ -40,9 +41,7 @@ button {
 
 canvas {
   border: 1px solid #ccc;
-  width: 100%;
-  height: 60vh;
-  touch-action: none;
+  display: block;
 }
 
 #acciones {
@@ -99,9 +98,14 @@ canvas.allowTouchScrolling = false;
 
 // Ajustar tamaño dinámico
 function resizeCanvas() {
-  const c = document.getElementById("canvas");
-  canvas.setWidth(c.clientWidth);
-  canvas.setHeight(window.innerHeight * 0.6);
+  const containerWidth = document.body.clientWidth;
+
+  const width = containerWidth - 20;
+  const height = window.innerHeight * 0.6;
+
+  canvas.setWidth(width);
+  canvas.setHeight(height);
+
   canvas.renderAll();
 }
 window.addEventListener('resize', resizeCanvas);
