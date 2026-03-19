@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Croquis PRO</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+
+<style>
+body { font-family: Arial; margin: 10px; }
+#toolbar button { margin: 2px; }
+canvas { border: 1px solid #ccc; }
+.active { background: #ddd; }
+</style>
+</head>
+
+<body>
+
+<h3>Croquis de recinto</h3>
+
+<input id="nombre" placeholder="Nombre del recinto"/>
+
+<div>
+  <button onclick="agregarPiso()">+ Piso</button>
+  <span id="pisos"></span>
+</div>
+
+<br>
+
+<div id="toolbar">
+  <button onclick="setMode('select')">🖱️</button>
+  <button onclick="setMode('draw')">🖊️</button>
+  <button onclick="setMode('line')">📏</button>
+  <button onclick="setMode('rect')">⬛</button>
+  <button onclick="setMode('polygon')">🔺</button>
+  <button onclick="borrar()">🧽</button>
+  <button onclick="undo()">↩️</button>
+
+  🎨 <input type="color" id="color" value="#000000">
+  📏 <input type="number" id="width" value="2" min="1" max="10" style="width:50px;">
+</div>
+
+<br>
+
+<canvas id="canvas" width="700" height="450"></canvas>
+
+<br><br>
+<button onclick="guardar()">💾 Guardar</button>
+
+<script>
+const canvas = new fabric.Canvas('canvas');
+
+let mode = "select";
+let isDown = false;
+let startX, startY;
+let tempObj = null;
+let polygonPoints = [];
+let polygonLines = [];
+
+let pisos = {};
+let pisoActivo = null;
+let history = [];
+
+// =====================
+// MODOS
+// =====================
+function setMode(m) {
+  mode = m;
+  canvas.isDrawingMode = (m === 'draw');
+
+  if (m !== "polygon") {
+    resetPolygon();
+  }
+}
+
+// =====================
+// EVENTOS MOUSE
+// =====================
+canvas.on("mouse:down", function(o) {
+  isDown = true;
+  const pointer = canvas.getPointer(o.e);
+  startX = pointer.x;
+  startY = pointer.y;
+
+  const color = document.getElementById("color").value;
+  const width = parseInt(document.getElementById("width").value);
+
+  if (mode === "line") {
+    tempObj = new fabric.Line([startX, startY, startX, startY], {
+      stroke: color,
+      strokeWidth: width
+    });
+    canvas.add(tempObj);
+  }
+
+  if (mode === "rect") {
+    tempObj = new fabric.Rect({
+      left: startX,
+      top: startY,
+      width: 0,
+      height: 0,
+      fill: "transparent",
+      stroke: color,
+      strokeWidth: width
+    });
+    canvas.add(tempObj);
+  }
+
+  if (mode === "polygon") {
+    addPolygonPoint(pointer);
+  }
+});
+
+canvas.on("mouse:move", function(o) {
+  if (!isDown || !tempObj) return;
+
+  const pointer = canvas.getPointer(o.e);
+
+  if (mode === "line") {
+    tempObj.set({ x2: pointer.x, y2: pointer.y });
+  }
+
+  if (mode === "rect") {
+    tempObj.set({
+      width: pointer.x - startX,
+      height: pointer.y - startY
+    });
+  }
+
+  canvas.renderAll();
+});
+
+canvas.on("mouse:up", function() {
+  isDown = false;
+  tempObj = null;
+  saveHistory();
+});
+
+// =====================
+// POLIGONOS
+// =====================
+function addPolygonPoint(pointer) {
+  polygonPoints.push({ x: pointer.x, y: pointer.y });
+
+  const circle = new fabric.Circle({
+    left: pointer.x,
+    top: pointer.y,
+    radius: 3,
+    fill: "red",
+    selectable: false
+  });
+
+  canvas.add(circle);
+  polygonLines.push(circle);
+
+  if (polygonPoints.length > 1) {
+    const prev = polygonPoints[polygonPoints.length - 2];
+    const line = new fabric.Line(
+      [prev.x, prev.y, pointer.x, pointer.y],
+      { stroke: "gray", selectable: false }
+    );
+    canvas.add(line);
+    polygonLines.push(line);
+  }
+}
+
+// doble click = cerrar polígono
+canvas.on("mouse:dblclick", function() {
+  if (mode === "polygon" && polygonPoints.length > 2) {
+    const color = document.getElementById("color").value;
+    const width = parseInt(document.getElementById("width").value);
+
+    const poly = new fabric.Polygon(polygonPoints, {
+      fill: "transparent",
+      stroke: color,
+      strokeWidth: width
+    });
+
+    canvas.add(poly);
+
+    // limpiar guías
+    polygonLines.forEach(obj => canvas.remove(obj));
+    resetPolygon();
+
+    saveHistory();
+  }
+});
+
+function resetPolygon() {
+  polygonPoints = [];
+  polygonLines.forEach(obj => canvas.remove(obj));
+  polygonLines = [];
+}
+
+// =====================
+// BORRAR
+// =====================
+function borrar() {
+  const obj = canvas.getActiveObject();
+  if (obj) {
+    canvas.remove(obj);
+    saveHistory();
+  }
+}
+
+// =====================
+// HISTORIAL
+// =====================
+function saveHistory() {
+  history.push(canvas.toJSON());
+}
+
+function undo() {
+  if (history.length > 1) {
+    history.pop();
+    canvas.loadFromJSON(history[history.length - 1], canvas.renderAll.bind(canvas));
+  }
+}
+
+// =====================
+// PISOS
+// =====================
+function agregarPiso() {
+  const nombre = prompt("Nombre del piso:");
+  if (!nombre) return;
+
+  pisos[nombre] = null;
+  crearBotonPiso(nombre);
+
+  if (!pisoActivo) cambiarPiso(nombre);
+}
+
+function crearBotonPiso(nombre) {
+  const btn = document.createElement("button");
+  btn.innerText = nombre;
+  btn.onclick = () => cambiarPiso(nombre);
+  document.getElementById("pisos").appendChild(btn);
+}
+
+function cambiarPiso(nombre) {
+  if (pisoActivo) {
+    pisos[pisoActivo] = canvas.toJSON();
+  }
+
+  pisoActivo = nombre;
+  canvas.clear();
+  history = [];
+
+  if (pisos[nombre]) {
+    canvas.loadFromJSON(pisos[nombre], () => {
+      canvas.renderAll();
+      saveHistory();
+    });
+  }
+}
+
+// =====================
+// GUARDAR
+// =====================
+function guardar() {
+  if (pisoActivo) {
+    pisos[pisoActivo] = canvas.toJSON();
+  }
+
+  const data = {
+    nombre: document.getElementById("nombre").value,
+    pisos: pisos,
+    imagen: canvas.toDataURL("image/png")
+  };
+
+  fetch("/guardar", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(data)
+  })
+  .then(res => res.json())
+  .then(res => alert("Guardado: " + res.archivo));
+}
+</script>
+
+</body>
+</html>
