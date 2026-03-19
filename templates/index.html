@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <title>Croquis</title>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
 body {
@@ -42,6 +44,7 @@ button {
 canvas {
   border: 1px solid #ccc;
   display: block;
+  touch-action: none;
 }
 
 #acciones {
@@ -88,7 +91,7 @@ canvas {
 <canvas id="canvas"></canvas>
 
 <div id="acciones">
-  <button onclick="descargarImagen()" title="Descargar croquis">⬇️</button>
+  <button onclick="descargarPDF()" title="Descargar PDF multipiso">📄</button>
   <button id="guardarBtn" onclick="guardar()" title="Guardar en servidor">💾 Guardar</button>
 </div>
 
@@ -96,11 +99,10 @@ canvas {
 const canvas = new fabric.Canvas('canvas');
 canvas.allowTouchScrolling = false;
 
-// Ajustar tamaño dinámico
+// =====================
+// Resize correcto
 function resizeCanvas() {
-  const containerWidth = document.body.clientWidth;
-
-  const width = containerWidth - 20;
+  const width = document.body.clientWidth - 20;
   const height = window.innerHeight * 0.6;
 
   canvas.setWidth(width);
@@ -108,6 +110,7 @@ function resizeCanvas() {
 
   canvas.renderAll();
 }
+
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
@@ -127,7 +130,6 @@ let history = [];
 function setMode(m) {
   mode = m;
   canvas.isDrawingMode = (m === 'draw');
-
   if (m !== "polygon") resetPolygon();
 }
 
@@ -167,7 +169,6 @@ canvas.on("mouse:down", function(o) {
 
 canvas.on("mouse:move", function(o) {
   if (!isDown || !tempObj) return;
-
   const p = canvas.getPointer(o.e);
 
   if (mode === "line") tempObj.set({ x2: p.x, y2: p.y });
@@ -189,7 +190,7 @@ canvas.on("mouse:up", function() {
 });
 
 // =====================
-// POLIGONOS
+// Polígonos
 canvas.on("mouse:dblclick", function() {
   if (mode === "polygon" && polygonPoints.length > 2) {
     const color = document.getElementById("color").value;
@@ -302,11 +303,40 @@ function cambiarPiso(nombre) {
 }
 
 // =====================
-function descargarImagen() {
-  const link = document.createElement('a');
-  link.href = canvas.toDataURL("image/png");
-  link.download = "croquis.png";
-  link.click();
+// PDF multipiso
+async function descargarPDF() {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF();
+
+  let first = true;
+
+  for (const nombrePiso in pisos) {
+    if (pisos[nombrePiso]) {
+      await new Promise(resolve => {
+        canvas.loadFromJSON(pisos[nombrePiso], () => {
+          canvas.renderAll();
+          resolve();
+        });
+      });
+    } else {
+      canvas.clear();
+    }
+
+    const img = canvas.toDataURL("image/png");
+
+    if (!first) pdf.addPage();
+    first = false;
+
+    pdf.setFontSize(14);
+    pdf.text(`Recinto: ${document.getElementById("nombre").value}`, 10, 10);
+    pdf.text(`Piso: ${nombrePiso}`, 10, 18);
+
+    pdf.addImage(img, "PNG", 10, 25, 180, 120);
+  }
+
+  pdf.save("croquis.pdf");
+
+  if (pisoActivo) cambiarPiso(pisoActivo);
 }
 
 // =====================
