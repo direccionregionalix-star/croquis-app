@@ -2,14 +2,60 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Croquis PRO</title>
+<title>Croquis</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 
 <style>
-body { font-family: Arial; margin: 10px; }
-#toolbar button { margin: 2px; }
-canvas { border: 1px solid #ccc; }
-.active { background: #ddd; }
+body {
+  font-family: Arial;
+  margin: 0;
+  padding: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 10px;
+}
+
+#toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+button {
+  padding: 12px;
+  font-size: 18px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+}
+
+#pisos button {
+  margin: 3px;
+}
+
+canvas {
+  border: 1px solid #ccc;
+  width: 100%;
+  height: 60vh;
+  touch-action: none;
+}
+
+#acciones {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+}
+
+#guardarBtn {
+  flex: 1;
+  background: #4CAF50;
+  color: white;
+}
 </style>
 </head>
 
@@ -21,34 +67,47 @@ canvas { border: 1px solid #ccc; }
 
 <div>
   <button onclick="agregarPiso()">+ Piso</button>
-  <span id="pisos"></span>
+  <div id="pisos"></div>
 </div>
-
-<br>
 
 <div id="toolbar">
-  <button onclick="setMode('select')">🖱️</button>
-  <button onclick="setMode('draw')">🖊️</button>
-  <button onclick="setMode('line')">📏</button>
-  <button onclick="setMode('rect')">⬛</button>
-  <button onclick="setMode('polygon')">🔺</button>
-  <button onclick="borrar()">🧽</button>
-  <button onclick="undo()">↩️</button>
+  <button onclick="setMode('select')" title="Seleccionar">🖱️</button>
+  <button onclick="setMode('draw')" title="Dibujo libre">🖊️</button>
+  <button onclick="setMode('line')" title="Línea">📏</button>
+  <button onclick="setMode('rect')" title="Rectángulo">⬛</button>
+  <button onclick="setMode('polygon')" title="Polígono">🔺</button>
+
+  <button onclick="borrar()" title="Borrar objeto seleccionado">🧽</button>
+  <button onclick="limpiarCanvas()" title="Borrar todo el piso">🧹</button>
+
+  <button onclick="undo()" title="Deshacer">↩️</button>
 
   🎨 <input type="color" id="color" value="#000000">
-  📏 <input type="number" id="width" value="2" min="1" max="10" style="width:50px;">
+  📏 <input type="number" id="width" value="2" min="1" max="10" style="width:60px;">
 </div>
 
-<br>
+<canvas id="canvas"></canvas>
 
-<canvas id="canvas" width="700" height="450"></canvas>
-
-<br><br>
-<button onclick="guardar()">💾 Guardar</button>
+<div id="acciones">
+  <button onclick="descargarImagen()" title="Descargar croquis">⬇️</button>
+  <button id="guardarBtn" onclick="guardar()" title="Guardar en servidor">💾 Guardar</button>
+</div>
 
 <script>
 const canvas = new fabric.Canvas('canvas');
+canvas.allowTouchScrolling = false;
 
+// Ajustar tamaño dinámico
+function resizeCanvas() {
+  const c = document.getElementById("canvas");
+  canvas.setWidth(c.clientWidth);
+  canvas.setHeight(window.innerHeight * 0.6);
+  canvas.renderAll();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// =====================
 let mode = "select";
 let isDown = false;
 let startX, startY;
@@ -61,25 +120,19 @@ let pisoActivo = null;
 let history = [];
 
 // =====================
-// MODOS
-// =====================
 function setMode(m) {
   mode = m;
   canvas.isDrawingMode = (m === 'draw');
 
-  if (m !== "polygon") {
-    resetPolygon();
-  }
+  if (m !== "polygon") resetPolygon();
 }
 
 // =====================
-// EVENTOS MOUSE
-// =====================
 canvas.on("mouse:down", function(o) {
   isDown = true;
-  const pointer = canvas.getPointer(o.e);
-  startX = pointer.x;
-  startY = pointer.y;
+  const p = canvas.getPointer(o.e);
+  startX = p.x;
+  startY = p.y;
 
   const color = document.getElementById("color").value;
   const width = parseInt(document.getElementById("width").value);
@@ -105,24 +158,20 @@ canvas.on("mouse:down", function(o) {
     canvas.add(tempObj);
   }
 
-  if (mode === "polygon") {
-    addPolygonPoint(pointer);
-  }
+  if (mode === "polygon") addPolygonPoint(p);
 });
 
 canvas.on("mouse:move", function(o) {
   if (!isDown || !tempObj) return;
 
-  const pointer = canvas.getPointer(o.e);
+  const p = canvas.getPointer(o.e);
 
-  if (mode === "line") {
-    tempObj.set({ x2: pointer.x, y2: pointer.y });
-  }
+  if (mode === "line") tempObj.set({ x2: p.x, y2: p.y });
 
   if (mode === "rect") {
     tempObj.set({
-      width: pointer.x - startX,
-      height: pointer.y - startY
+      width: p.x - startX,
+      height: p.y - startY
     });
   }
 
@@ -137,33 +186,6 @@ canvas.on("mouse:up", function() {
 
 // =====================
 // POLIGONOS
-// =====================
-function addPolygonPoint(pointer) {
-  polygonPoints.push({ x: pointer.x, y: pointer.y });
-
-  const circle = new fabric.Circle({
-    left: pointer.x,
-    top: pointer.y,
-    radius: 3,
-    fill: "red",
-    selectable: false
-  });
-
-  canvas.add(circle);
-  polygonLines.push(circle);
-
-  if (polygonPoints.length > 1) {
-    const prev = polygonPoints[polygonPoints.length - 2];
-    const line = new fabric.Line(
-      [prev.x, prev.y, pointer.x, pointer.y],
-      { stroke: "gray", selectable: false }
-    );
-    canvas.add(line);
-    polygonLines.push(line);
-  }
-}
-
-// doble click = cerrar polígono
 canvas.on("mouse:dblclick", function() {
   if (mode === "polygon" && polygonPoints.length > 2) {
     const color = document.getElementById("color").value;
@@ -177,22 +199,43 @@ canvas.on("mouse:dblclick", function() {
 
     canvas.add(poly);
 
-    // limpiar guías
-    polygonLines.forEach(obj => canvas.remove(obj));
+    polygonLines.forEach(o => canvas.remove(o));
     resetPolygon();
-
     saveHistory();
   }
 });
 
+function addPolygonPoint(p) {
+  polygonPoints.push({ x: p.x, y: p.y });
+
+  const dot = new fabric.Circle({
+    left: p.x,
+    top: p.y,
+    radius: 3,
+    fill: "red",
+    selectable: false
+  });
+
+  canvas.add(dot);
+  polygonLines.push(dot);
+
+  if (polygonPoints.length > 1) {
+    const prev = polygonPoints[polygonPoints.length - 2];
+    const line = new fabric.Line([prev.x, prev.y, p.x, p.y], {
+      stroke: "gray",
+      selectable: false
+    });
+    canvas.add(line);
+    polygonLines.push(line);
+  }
+}
+
 function resetPolygon() {
   polygonPoints = [];
-  polygonLines.forEach(obj => canvas.remove(obj));
+  polygonLines.forEach(o => canvas.remove(o));
   polygonLines = [];
 }
 
-// =====================
-// BORRAR
 // =====================
 function borrar() {
   const obj = canvas.getActiveObject();
@@ -202,8 +245,13 @@ function borrar() {
   }
 }
 
-// =====================
-// HISTORIAL
+function limpiarCanvas() {
+  if (confirm("¿Borrar todo este piso?")) {
+    canvas.clear();
+    saveHistory();
+  }
+}
+
 // =====================
 function saveHistory() {
   history.push(canvas.toJSON());
@@ -216,8 +264,6 @@ function undo() {
   }
 }
 
-// =====================
-// PISOS
 // =====================
 function agregarPiso() {
   const nombre = prompt("Nombre del piso:");
@@ -237,9 +283,7 @@ function crearBotonPiso(nombre) {
 }
 
 function cambiarPiso(nombre) {
-  if (pisoActivo) {
-    pisos[pisoActivo] = canvas.toJSON();
-  }
+  if (pisoActivo) pisos[pisoActivo] = canvas.toJSON();
 
   pisoActivo = nombre;
   canvas.clear();
@@ -254,12 +298,16 @@ function cambiarPiso(nombre) {
 }
 
 // =====================
-// GUARDAR
+function descargarImagen() {
+  const link = document.createElement('a');
+  link.href = canvas.toDataURL("image/png");
+  link.download = "croquis.png";
+  link.click();
+}
+
 // =====================
 function guardar() {
-  if (pisoActivo) {
-    pisos[pisoActivo] = canvas.toJSON();
-  }
+  if (pisoActivo) pisos[pisoActivo] = canvas.toJSON();
 
   const data = {
     nombre: document.getElementById("nombre").value,
@@ -273,7 +321,7 @@ function guardar() {
     body: JSON.stringify(data)
   })
   .then(res => res.json())
-  .then(res => alert("Guardado: " + res.archivo));
+  .then(() => alert("Guardado correctamente"));
 }
 </script>
 
